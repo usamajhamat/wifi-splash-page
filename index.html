@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Splash Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .terms {
+            font-size: 14px;
+            color: #666;
+        }
+        .terms a {
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Our WiFi</h1>
+        <p>Connect to the internet by clicking below. By connecting, you agree to our terms.</p>
+        <a href="#" class="btn" onclick="connect()">Connect to WiFi</a>
+        <p class="terms">By connecting, you agree to our <a href="/terms.html">Terms and Conditions</a>.</p>
+    </div>
+    <script>
+        function connect() {
+            alert("Connecting to WiFi...");
+            // Replace with Tanaza's authentication endpoint or redirect URL
+            window.location.href = "https://success.tanaza.com";
+        }
+    </script>
+</body>
+</html>
