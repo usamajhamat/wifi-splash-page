@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>WiFi Login</title>
   <style>
     body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f0f0f0; }
-    .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center; }
-    input { padding: 10px; margin: 10px 0; width: 100%; box-sizing: border-box; }
-    button { padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; }
+    .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center; width: 300px; }
+    input, button { padding: 10px; margin: 10px 0; width: 100%; }
+    button { background: #007bff; color: white; border: none; }
     button:hover { background: #0056b3; }
     .error { color: red; display: none; }
   </style>
@@ -16,44 +16,56 @@
 <body>
   <div class="container">
     <h2>WiFi Access</h2>
-    <p>Enter your email to connect</p>
     <form id="loginForm">
-      <input type="email" id="email" placeholder="Email" required>
+      <input type="email" id="email" placeholder="Enter your email" required />
       <button type="submit">Connect</button>
-      <p id="error" class="error">Error: Unable to connect</p>
+      <p id="error" class="error">Error connecting</p>
     </form>
   </div>
+
   <script>
     const form = document.getElementById('loginForm');
     const error = document.getElementById('error');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('email').value;
+    const query = new URLSearchParams(window.location.search);
+    const ap_ip = query.get('ap_ip');
+    const ap_port = query.get('ap_port');
+    const user_mac = query.get('user_mac');
+    const user_url = query.get('user_url');
 
-      try {
-        const response = await fetch('http://localhost:3000/api/authenticate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, mac: getClientMac() })
-        });
+   form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value;
+  error.style.display = 'none';
 
-        const result = await response.json();
-        if (result.success) {
-          window.location.href = result.redirectUrl;
-        } else {
-          error.textContent = result.message || 'Error: Unable to connect';
-          error.style.display = 'block';
-        }
-      } catch (err) {
-        error.textContent = 'Network error. Please try again.';
-        error.style.display = 'block';
-      }
+  const button = form.querySelector('button');
+  button.disabled = true;
+  button.textContent = 'Connecting...';
+
+  try {
+    const response = await fetch('/api/authenticate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, mac: user_mac })
     });
 
-    function getClientMac() {
-      return new URLSearchParams(window.location.search).get('mac') || '00:11:22:33:44:55'; // Mock MAC for testing
+    const result = await response.json();
+    if (result.success) {
+      const qs = `?ap_ip=${ap_ip}&ap_port=${ap_port}&user_mac=${user_mac}&user_url=${encodeURIComponent(user_url)}`;
+      window.location.href = result.redirectUrl + qs;
+    } else {
+      error.textContent = result.message;
+      error.style.display = 'block';
     }
+  } catch (err) {
+    error.textContent = 'Network error.';
+    error.style.display = 'block';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Connect';
+  }
+});
+
   </script>
 </body>
 </html>

@@ -3,127 +3,158 @@ const mysql = require('mysql2/promise');
 const app = express();
 const port = 3000;
 
-// Middleware
-app.use(express.json());
-app.use(express.static('public')); // Serve splash.html from 'public' folder
+console.log('Starting server setup...');
+
+app.use(express.static('public')); // Serve splash.html
+app.use(express.json()); // Parse JSON bodies
+console.log('Middleware configured.');
 
 // MariaDB connection
 const pool = mysql.createPool({
   host: 'localhost',
-  user: 'tanaza_user', // Replace with your MariaDB user
-  password: 'your_password', // Replace with your MariaDB password
+  user: 'root',
+  password: '',
   database: 'tanaza_wifi',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 });
 
-// Constants
-const DATA_LIMIT = 1_000_000_000; // 1GB in bytes
-const TIME_LIMIT = 3_600_000; // 1 hour in milliseconds
+console.log('Database pool created.');
 
-// Mock Tanaza API response for testing
+// Limits
+const DATA_LIMIT = 1_000_000_000; // 1GB
+const TIME_LIMIT = 3_600_000; // 1 hour
+
+// Mock Tanaza API
 const mockTanazaApi = async (endpoint, data) => {
-    console.log('Data----', data);
-    console.log('Endpoint----', endpoint);
-    
-    
-  if (endpoint === '/apis/v3.0/11F975B0CFD3F548776B8C9C738605D1/A9E3F295D529FABA248B0790DAA30D9F/status') {
-    return { data: { success: true, status: 'connected' } }; // Mock status check
-  } else if (endpoint === '/clients/auth') {
-    return { data: { success: true, redirect_url: 'http://localhost:3000/success' } }; // Mock auth
+  console.log(`Calling mockTanazaApi: ${endpoint}`);
+  if (data) console.log('Payload:', data);
+
+  if (endpoint === '/clients/auth') {
+    return { data: { success: true, redirect_url: '/success' } };
   } else if (endpoint === '/clients/disconnect') {
-    return { data: { success: true } }; // Mock disconnect
+    console.log(`Mock disconnect for ${data?.mac}`);
+    return { data: { success: true } };
+  } else if (endpoint.includes('/status')) {
+    return { data: { success: true, status: 'connected' } };
   }
+
+  console.warn('Unknown mockTanazaApi endpoint:', endpoint);
   throw new Error('Unknown endpoint');
 };
 
-// Authenticate user
+// Authenticate API
 app.post('/api/authenticate', async (req, res) => {
-    console.log('Req-----', req);
-    console.log('Res-----', res);
-    
-  const { email, mac } = req.body;
-  if (!email || !mac) {
-    return res.json({ success: false, message: 'Invalid request' });
-  }
+  console.log('Received authentication request.', req);
+  console.log('Request body:', req.body);
+
+ const { email, mac } = req.body;
+if (!email || !mac) {
+  console.warn('Missing email or MAC');
+  return res.json({ success: false, message: 'Missing email or MAC' });
+}
 
   try {
-    // Check user limits
     const [rows] = await pool.query('SELECT * FROM users WHERE mac = ?', [mac]);
     const user = rows[0];
+    console.log('User found in DB:', user);
+
     const today = new Date().toISOString().split('T')[0];
+    console.log('Today is:', today);
 
     if (user && user.last_reset === today) {
+      console.log('Checking limits...');
       if (user.data_used >= DATA_LIMIT) {
-        return res.json({ success: false, message: 'Daily data limit reached' });
+        console.warn('Data limit reached.');
+        return res.json({ success: false, message: 'Data limit reached' });
       }
       if (user.time_used >= TIME_LIMIT) {
-        return res.json({ success: false, message: 'Daily time limit reached' });
+        console.warn('Time limit reached.');
+        return res.json({ success: false, message: 'Time limit reached' });
       }
     } else {
-      // Reset usage for new day
+      console.log('New day: resetting user usage.');
       await pool.query(
-        'INSERT INTO users (mac, email, data_used, time_used, last_reset) VALUES (?, ?, 0, 0, ?) ON DUPLICATE KEY UPDATE email = ?, data_used = 0, time_used = 0, last_reset = ?',
+        'INSERT INTO users (mac, email, data_used, time_used, last_reset) VALUES (?, ?, 0, 0, ?) ON DUPLICATE KEY UPDATE email=?, data_used=0, time_used=0, last_reset=?',
         [mac, email, today, email, today]
       );
     }
 
-    // Simulate Tanaza API status check
-    const statusResponse = await mockTanazaApi('/apis/v3.0/11F975B0CFD3F548776B8C9C738605D1/A9E3F295D529FABA248B0790DAA30D9F/status');
-    if (!statusResponse.data.success) {
-      return res.json({ success: false, message: 'Device not available' });
+    console.log('Calling mock API for device status...');
+    const status = await mockTanazaApi('/status', {});
+    console.log('Status response:', status);
+
+    if (!status.data.success) {
+      console.error('Device status check failed.');
+      return res.json({ success: false, message: 'Device unavailable' });
     }
 
-    // Simulate Tanaza API authentication
-    const tanazaResponse = await mockTanazaApi('/clients/auth', { mac, email, ssid: 'test_ssid' });
+    console.log('Calling mock API for client auth...');
+    const tanazaAuth = await mockTanazaApi('/clients/auth', { mac, email });
+    console.log('Auth response:', tanazaAuth);
 
-    if (tanazaResponse.data.success) {
-      // Start tracking usage
-      await updateUsage(mac);
-      res.json({ success: true, redirectUrl: tanazaResponse.data.redirect_url });
+    if (tanazaAuth.data.success) {
+      console.log(`Authentication successful. Redirecting ${mac}...`);
+      updateUsage(mac); // Start tracking usage
+      return res.json({ success: true, redirectUrl: tanazaAuth.data.redirect_url });
     } else {
-      res.json({ success: false, message: 'Authentication failed' });
+      console.warn('Authentication failed.');
+      return res.json({ success: false, message: 'Authentication failed' });
     }
+
   } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: 'Server error' });
+    console.log('Error during authentication:', err);
+    return res.json({ success: false, message: 'Server error' });
   }
 });
 
-// Success page for testing
+// Final redirect to Tanaza gateway
 app.get('/success', (req, res) => {
-  res.send('<h1>Connected Successfully!</h1><p>You are now connected to the WiFi.</p>');
+  const { ap_ip, ap_port, client_mac, user_url } = req.query;
+  console.log('Received /success parameters:', req.query);
+
+//   if (!ap_ip || !ap_port || !client_mac || !user_url) {
+//     console.log('Missing params in success:', req.query);
+//     return res.status(400).send('<h1>Missing required parameters</h1>');
+//   }
+
+  console.log('Redirecting user to their original destination:', user_url);
+  return res.redirect(user_url);
 });
 
-// Update usage (simulate data/time tracking)
+
+// Simulate usage tracking
 async function updateUsage(mac) {
-  setInterval(async () => {
+  console.log(`Starting usage tracking for MAC: ${mac}`);
+
+  const interval = setInterval(async () => {
     try {
       const [rows] = await pool.query('SELECT * FROM users WHERE mac = ?', [mac]);
       const user = rows[0];
-      if (!user) return;
+      if (!user) {
+        console.warn(`MAC ${mac} not found during tracking. Stopping.`);
+        return clearInterval(interval);
+      }
 
-      const newData = user.data_used + 100_000; // Simulate 100KB per second
-      const newTime = user.time_used + 1_000; // Simulate 1 second
+      const newData = user.data_used + 100_000;
+      const newTime = user.time_used + 1_000;
 
-      await pool.query(
-        'UPDATE users SET data_used = ?, time_used = ? WHERE mac = ?',
-        [newData, newTime, mac]
-      );
+      console.log(`Updating usage for ${mac}: Data=${newData}, Time=${newTime}`);
+      await pool.query('UPDATE users SET data_used=?, time_used=? WHERE mac=?', [newData, newTime, mac]);
 
       if (newData >= DATA_LIMIT || newTime >= TIME_LIMIT) {
-        // Simulate disconnection
-        await mockTanazaApi('/clients/disconnect', { mac, ssid: 'test_ssid' });
-        console.log(`User ${mac} disconnected due to limit`);
+        console.log(`Usage limit exceeded for ${mac}, disconnecting...`);
+        await mockTanazaApi('/clients/disconnect', { mac });
+        clearInterval(interval);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error during usage update:', err);
     }
-  }, 1_000); // Update every second
+  }, 1000);
 }
 
 // Start server
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`✅ Server running at http://localhost:${port}`);
 });
